@@ -14,10 +14,14 @@ var babelPluginDEV = require('fbjs-scripts/babel/dev-expression');
 var babelPluginModules = require('fbjs-scripts/babel/rewrite-modules');
 var del = require('del');
 var derequire = require('gulp-derequire');
+var envify = require('envify/custom');
 var flatten = require('gulp-flatten');
 var gulp = require('gulp');
 var gulpUtil = require('gulp-util');
 var header = require('gulp-header');
+var os=require('os');
+var fs=require('fs');
+var path=require('path');
 var objectAssign = require('object-assign');
 var runSequence = require('run-sequence');
 var webpackStream = require('webpack-stream');
@@ -50,8 +54,7 @@ var babelOpts = {
   optional: ['runtime'],
   plugins: [babelPluginDEV, babelPluginModules],
   _moduleMap: objectAssign({}, require('fbjs/module-map'), {
-    'React': 'react',
-    'ReactDOM': 'react-dom',
+    'React': 'react-native',
     'StaticContainer.react': 'react-static-container'
   })
 };
@@ -60,8 +63,12 @@ var buildDist = function(opts) {
   var webpackOpts = {
     debug: opts.debug,
     externals: {
-      'react': 'React',
-      'react-dom': 'ReactDOM'
+      react: 'React'
+    },
+    module: {
+      loaders: [
+        {test: /\.js$/, loader: 'babel'}
+      ],
     },
     output: {
       filename: opts.output,
@@ -94,7 +101,7 @@ var buildDist = function(opts) {
       throw new gulpUtil.PluginError('webpack', err);
     }
     if (stats.compilation.errors.length) {
-      throw new gulpUtil.PluginError('webpack', stats.toString());
+      gulpUtil.log('webpack', '\n' + stats.toString({colors: true}));
     }
   });
 };
@@ -113,7 +120,24 @@ var paths = {
 gulp.task('clean', function(cb) {
   del([paths.dist, paths.lib], cb);
 });
+gulp.task('clear-cache', function () {
+  // Clear react-packager cache
+  var tempDir = os.tmpdir();
 
+  var cacheFiles = fs.readdirSync(tempDir).filter(function (fileName) {
+    return fileName.indexOf('react-packager-cache') === 0;
+  });
+
+  cacheFiles.forEach(function (cacheFile) {
+    var cacheFilePath = path.join(tempDir, cacheFile);
+    fs.unlinkSync(cacheFilePath);
+    console.log('Deleted cache: ', cacheFilePath);
+  });
+
+  if (!cacheFiles.length) {
+    console.log('No cache files found!');
+  }
+});
 gulp.task('modules', function() {
   return gulp
     .src(paths.src)
@@ -122,7 +146,7 @@ gulp.task('modules', function() {
     .pipe(gulp.dest(paths.lib));
 });
 
-gulp.task('dist', ['modules'], function() {
+gulp.task('dist', ['modules'], function () {
   var distOpts = {
     debug: true,
     output: 'relay.js'
@@ -136,7 +160,7 @@ gulp.task('dist', ['modules'], function() {
     .pipe(gulp.dest(paths.dist));
 });
 
-gulp.task('dist:min', ['modules'], function() {
+gulp.task('dist:min', ['modules'], function () {
   var distOpts = {
     debug: false,
     output: 'relay.min.js'
@@ -165,5 +189,5 @@ gulp.task('watch', function() {
 });
 
 gulp.task('default', function(cb) {
-  runSequence('clean', 'website:check-version', ['dist', 'dist:min'], cb);
+  runSequence('clean', 'website:check-version', 'modules', ['dist', 'dist:min'], cb);
 });
